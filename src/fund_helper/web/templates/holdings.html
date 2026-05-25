@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}持仓基金 · fund-helper{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2 style="margin:0;">持仓基金净值</h2>
+    <p class="muted" style="margin:4px 0 0;">
+      共 {{ cards|length }} 只 · 合计权重 {{ total_weight }}%
+      {% if as_of %} · 持仓快照 {{ as_of }}{% endif %}
+      · 当前窗口：<b>{{ window_label }}</b>
+    </p>
+  </div>
+  <div class="seg">
+    {% for k, label, days in windows %}{% if days > 0 %}
+      <a class="seg-btn {{ 'on' if k == window_key else '' }}"
+         href="/holdings?window={{ k }}">{{ label }}</a>{% endif %}
+    {% endfor %}
+  </div>
+</div>
+
+{% for c in cards %}
+<div class="card fund-card">
+  <div class="fund-head">
+    <span class="dot" style="background: var(--c{{ loop.index0 }});"></span>
+    <b class="fund-code"><a href="/fund/{{ c.code }}">{{ c.code }}</a></b>
+    <span class="fund-name">{{ c.name }}</span>
+    <span class="fund-weight">权重 {{ '%.2f'|format(c.weight) }}%</span>
+  </div>
+
+  {% if c.missing %}
+    <div class="empty" style="margin-top:12px;">
+      本地缺少 {{ c.code }} 在该窗口的净值。
+      在终端运行 <code class="kbd">fh refresh nav --code {{ c.code }}</code> 后刷新本页。
+    </div>
+  {% else %}
+    <div class="fund-body">
+      <div class="fund-stats">
+        <div class="stat"><div class="k">区间 ({{ c.start }} ~ {{ c.end }})</div>
+          <div class="v">{{ c.n_obs }} 日</div></div>
+        <div class="stat"><div class="k">区间收益</div>
+          <div class="v {{ 'pos' if c.cum_ret >= 0 else 'neg' }}">
+            {{ '%+.2f%%'|format(c.cum_ret * 100) }}
+          </div></div>
+        <div class="stat"><div class="k">年化（外推）</div>
+          <div class="v {{ 'pos' if c.ann_ret >= 0 else 'neg' }}">
+            {{ '%+.2f%%'|format(c.ann_ret * 100) }}
+          </div></div>
+        <div class="stat"><div class="k">区间最大回撤</div>
+          <div class="v neg">{{ '%.2f%%'|format(c.max_dd * 100) }}</div></div>
+        <div class="stat"><div class="k">单位净值（最新）</div>
+          <div class="v">{{ '%.4f'|format(c.nav_now) }}</div></div>
+        <div class="stat"><div class="k">区间高 / 低</div>
+          <div class="v" style="font-size:14px;">
+            {{ '%.4f'|format(c.nav_max) }} / {{ '%.4f'|format(c.nav_min) }}
+          </div></div>
+      </div>
+      <div class="fund-chart" id="chart-{{ c.code }}"></div>
+    </div>
+    <script>
+      (function(){
+        const dom = document.getElementById('chart-{{ c.code }}');
+        const chart = echarts.init(dom);
+        const data = {{ c.chart|tojson }};
+        const positive = {{ 'true' if c.cum_ret >= 0 else 'false' }};
+        const color = positive ? '#16a34a' : '#dc2626';
+        chart.setOption({
+          tooltip: { trigger: 'axis',
+            formatter: p => p[0].axisValueLabel + '<br/>归一化净值 ' + (+p[0].data).toFixed(4) },
+          grid:  { left: 36, right: 16, top: 12, bottom: 28 },
+          xAxis: { type: 'category', data: data.dates, boundaryGap: false,
+                   axisLabel: { fontSize: 10, color: '#888' } },
+          yAxis: { type: 'value', scale: true,
+                   axisLabel: { fontSize: 10, color: '#888' } },
+          series: [{
+            type: 'line', data: data.values,
+            showSymbol: true, symbol: 'circle', symbolSize: 5,
+            smooth: false, connectNulls: true,
+            lineStyle: { width: 1.2, color: color, opacity: 0.85 },
+            itemStyle: { color: color, opacity: 0.9 },
+          }],
+        });
+        window.addEventListener('resize', () => chart.resize());
+      })();
+    </script>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

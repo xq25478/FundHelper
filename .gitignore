@@ -50,3 +50,6 @@ data/fund.db-wal
 data/fund.db-shm
 .cache/
 *.log
+
+# project venv
+fund/

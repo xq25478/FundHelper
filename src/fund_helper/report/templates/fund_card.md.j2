@@ -1,0 +1,23 @@
+# 基金分析报告 — {{ code }}
+
+_生成时间：{{ generated_at }}_
+
+{% if missing %}
+> 本地未找到 {{ code }} 的净值数据，请先执行 `fh refresh nav --code {{ code }}`。
+{% else %}
+## 区间概览
+- 样本区间：{{ start }} ~ {{ end }}（{{ n_obs }} 个交易日）
+
+## 收益
+- 累计收益：{{ '%.2f%%' % (cum_ret * 100) }}
+- 年化收益：{{ '%.2f%%' % (ann_ret * 100) }}
+
+## 风险
+- 年化波动：{{ '%.2f%%' % (ann_vol * 100) }}
+- 最大回撤：{{ '%.2f%%' % (max_dd * 100) }}
+
+## 风险调整后收益
+- Sharpe：{{ '%.2f' % sharpe }}
+- Sortino：{{ '%.2f' % sortino }}
+- Calmar：{{ '%.2f' % calmar }}
+{% endif %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} · fund-helper{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>基金 {{ code }}</h2>
+  <p class="muted">生成时间：{{ generated_at }}</p>
+
+  {% if missing %}
+    <div class="empty">
+      <p>本地还没有 <b>{{ code }}</b> 的净值数据。</p>
+      <p>在终端运行：<code class="kbd">fh refresh nav --code {{ code }}</code></p>
+    </div>
+  {% else %}
+    <div class="metric-grid">
+      <div class="metric"><div class="k">样本区间</div>
+        <div class="v" style="font-size:14px;">{{ metrics.start }} ~ {{ metrics.end }}</div></div>
+      <div class="metric"><div class="k">观测交易日</div><div class="v">{{ metrics.n_obs }}</div></div>
+      <div class="metric"><div class="k">累计收益</div>
+        <div class="v {{ 'pos' if metrics.cum_ret >= 0 else 'neg' }}">
+          {{ '%.2f%%'|format(metrics.cum_ret * 100) }}
+        </div></div>
+      <div class="metric"><div class="k">年化收益</div>
+        <div class="v {{ 'pos' if metrics.ann_ret >= 0 else 'neg' }}">
+          {{ '%.2f%%'|format(metrics.ann_ret * 100) }}
+        </div></div>
+      <div class="metric"><div class="k">年化波动</div>
+        <div class="v">{{ '%.2f%%'|format(metrics.ann_vol * 100) }}</div></div>
+      <div class="metric"><div class="k">最大回撤</div>
+        <div class="v neg">{{ '%.2f%%'|format(metrics.max_dd * 100) }}</div></div>
+      <div class="metric"><div class="k">Sharpe</div>
+        <div class="v">{{ '%.2f'|format(metrics.sharpe) }}</div></div>
+      <div class="metric"><div class="k">Sortino</div>
+        <div class="v">{{ '%.2f'|format(metrics.sortino) }}</div></div>
+      <div class="metric"><div class="k">Calmar</div>
+        <div class="v">{{ '%.2f'|format(metrics.calmar) }}</div></div>
+    </div>
+
+    <h3 style="margin-top:24px;">归一化净值曲线</h3>
+    <div id="nav" class="chart"></div>
+
+    <script>
+      const data = {{ nav_chart|tojson }};
+      const chart = echarts.init(document.getElementById('nav'));
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
+        grid: { left: 40, right: 16, top: 16, bottom: 36 },
+        xAxis: { type: 'category', data: data.dates, boundaryGap: false },
+        yAxis: { type: 'value', scale: true },
+        series: [{ type: 'line', data: data.values, smooth: true, showSymbol: false,
+                   areaStyle: { opacity: 0.12 }, lineStyle: { width: 2 } }],
+      });
+      window.addEventListener('resize', () => chart.resize());
+    </script>
+  {% endif %}
+
+  <p style="margin-top:24px;"><a class="btn" href="/">← 返回持仓</a></p>
+</div>
+{% endblock %}

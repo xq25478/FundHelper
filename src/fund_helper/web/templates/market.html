@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}大盘行情 · fund-helper{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div style="flex:1;">
+    <h2 style="margin:0;">A 股大盘</h2>
+    <p class="muted" style="margin:4px 0 0;">
+      {% if window_key == "today" %}
+        {% if is_session %}盘中实时（60s 缓存）{% else %}非盘中，展示最近一个交易日的最终行情（12h 缓存）{% endif %}
+        · 数据来源：{{ source_used }} · 更新于 {{ refreshed_at }}
+      {% else %}
+        历史日 K · 数据来源：新浪 (akshare) · 最长保留 180 天 · 当前窗口：<b>{{ window_label }}</b>
+      {% endif %}
+      {% set missing = cards | selectattr("missing") | list %}
+      {% if missing | length == cards | length %}
+        · <span style="color: var(--neg);">远端暂未返回数据，刷新页面或稍后再试</span>
+      {% elif missing | length > 0 %}
+        · {{ missing | length }} 个指数远端暂无返回
+      {% endif %}
+    </p>
+  </div>
+  <div class="seg">
+    {% for k, label, _ in windows %}
+      <a class="seg-btn {{ 'on' if k == window_key else '' }}"
+         href="/market?window={{ k }}">{{ label }}</a>
+    {% endfor %}
+    <a class="seg-btn" href="/market?window={{ window_key }}&refresh=1"
+       title="跳过缓存重新拉取一次">↻ 刷新</a>
+  </div>
+</div>
+
+<div class="market-grid">
+{% for c in cards %}
+  <div class="card index-card">
+    <div class="index-head">
+      <span class="dot" style="background: var(--c{{ loop.index0 }});"></span>
+      <b class="index-name">{{ c.name }}</b>
+      <span class="muted" style="font-size:12px;">{{ c.secid }}</span>
+    </div>
+
+    {% if c.missing %}
+      <div class="empty" style="margin-top:12px;">暂无 {{ c.name }} 的数据。</div>
+    {% else %}
+      <div class="index-now">
+        <span class="now-value {{ 'pos' if (c.pct or 0) >= 0 else 'neg' }}">
+          {{ '%.2f'|format(c.now) }}
+        </span>
+        <span class="now-delta {{ 'pos' if (c.pct or 0) >= 0 else 'neg' }}">
+          {{ '%+.2f'|format(c.delta) }} ({{ '%+.2f%%'|format(c.pct * 100) }})
+        </span>
+      </div>
+
+      <div class="index-meta">
+        <span><i>昨收</i>{{ '%.2f'|format(c.pre_close) }}</span>
+        <span><i>最高</i>{{ '%.2f'|format(c.high) }}</span>
+        <span><i>最低</i>{{ '%.2f'|format(c.low) }}</span>
+        <span><i>更新</i>{{ c.last_ts or c.trade_date or '-' }}</span>
+      </div>
+
+      {% if window_key != "today" and c.chart %}
+      <div class="index-range-meta">
+        <span>区间 <b>{{ c.n_obs }} 日</b></span>
+        <span>区间收益
+          <b class="{{ 'pos' if c.range_ret >= 0 else 'neg' }}">{{ '%+.2f%%'|format(c.range_ret * 100) }}</b>
+        </span>
+        <span>区间高/低 {{ '%.2f'|format(c.close_max) }} / {{ '%.2f'|format(c.close_min) }}</span>
+      </div>
+      <div class="index-chart" id="ichart-{{ c.secid }}"></div>
+      <script>
+        (function(){
+          const dom = document.getElementById('ichart-{{ c.secid }}');
+          const chart = echarts.init(dom);
+          const data = {{ c.chart|tojson }};
+          const positive = {{ 'true' if c.range_ret >= 0 else 'false' }};
+          const color = positive ? '#16a34a' : '#dc2626';
+          chart.setOption({
+            tooltip: { trigger: 'axis',
+              formatter: p => p[0].axisValueLabel + '<br/>收盘 ' + (+p[0].data).toFixed(2) },
+            grid:  { left: 42, right: 12, top: 10, bottom: 24 },
+            xAxis: { type: 'category', data: data.dates, boundaryGap: false,
+                     axisLabel: { fontSize: 10, color: '#888' } },
+            yAxis: { type: 'value', scale: true,
+                     axisLabel: { fontSize: 10, color: '#888' } },
+            series: [{
+              type: 'line', data: data.values,
+              showSymbol: true, symbol: 'circle', symbolSize: 4,
+              smooth: false, connectNulls: true,
+              lineStyle: { width: 1.2, color: color, opacity: 0.85 },
+              itemStyle: { color: color, opacity: 0.9 },
+            }],
+          });
+          window.addEventListener('resize', () => chart.resize());
+        })();
+      </script>
+      {% endif %}
+    {% endif %}
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

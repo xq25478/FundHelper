@@ -1,0 +1,36 @@
+data_dir: ./data
+log_level: INFO
+
+datasource:
+  primary: eastmoney         # eastmoney | tiantian | akshare | composite
+  fallback: [tiantian, akshare]
+  http:
+    timeout: 10
+    retries: 3
+    rate_limit_per_sec: 5
+
+cache:
+  nav_ttl_hours: 12
+  meta_ttl_hours: 168
+
+benchmarks:
+  default: "000300.SH"
+  by_type:
+    equity:  "000300.SH"
+    hybrid:  "000906.SH"
+    bond:    "H11001.CSI"
+    qdii:    "990001.OTH"
+
+risk_free_rate: 0.018
+
+ai:
+  enabled: true
+  protocol: anthropic                                  # anthropic | openai_chat | openai_responses
+  base_url: "https://127.0.0.1:8443/anthropic/v1"
+  api_key:  "EMPTY"
+  model:    "codex"
+  timeout:  60
+  max_tokens: 65536
+  system_prompt: |
+    你是一名 A 股基金分析助手。基于用户给出的持仓、行情、新闻等数据，
+    输出客观、可数据追溯的判断；避免“坚定看好/暴涨/绝对”等情绪化措辞。

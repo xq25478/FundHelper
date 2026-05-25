@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}fund-helper{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <nav class="stepper">
+    {% set nav_items = [
+      ("01", "holdings",   "/holdings",      "持仓基金", "wallet"),
+      ("02", "xray",       "/holdings_xray", "持仓穿透", "xray"),
+      ("03", "market",     "/market",        "大盘行情", "chart"),
+      ("04", "sectors",    "/sectors",       "板块行情", "sector"),
+      ("05", "news",       "/news",          "实时新闻", "news"),
+      ("06", "ai",         "/ai",            "AI 分析",  "ai"),
+    ] %}
+    {% for num, key, href, label, icon in nav_items %}
+      <a class="step {{ 'on' if active == key else '' }}" href="{{ href }}">
+        <span class="num">{{ num }}</span>
+        {% if icon == "wallet" %}
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="6" width="18" height="13" rx="2"/>
+            <path d="M16 13h2"/>
+            <path d="M3 9h18"/>
+          </svg>
+        {% elif icon == "xray" %}
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="6"/>
+            <path d="M20 20l-4-4"/>
+            <path d="M11 8v6M8 11h6"/>
+          </svg>
+        {% elif icon == "chart" %}
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 17l5-6 4 4 4-7 5 8"/>
+          </svg>
+        {% elif icon == "sector" %}
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="6" height="7" rx="1.5"/>
+            <rect x="3" y="14" width="6" height="6" rx="1.5"/>
+            <rect x="13" y="4" width="8" height="6" rx="1.5"/>
+            <rect x="13" y="13" width="8" height="7" rx="1.5"/>
+          </svg>
+        {% elif icon == "news" %}
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2"/>
+            <path d="M7 8h10M7 12h10M7 16h6"/>
+          </svg>
+        {% elif icon == "ai" %}
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 5v-2M12 21v-2M5 12h-2M21 12h-2"/>
+            <path d="M6.5 6.5l-1.4-1.4M18.9 18.9l-1.4-1.4M17.5 6.5l1.4-1.4M5.1 18.9l1.4-1.4"/>
+          </svg>
+        {% endif %}
+        <span class="label">{{ label }}</span>
+      </a>
+      {% if not loop.last %}<span class="sep"></span>{% endif %}
+    {% endfor %}
+  </nav>
+</header>
+<main>
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

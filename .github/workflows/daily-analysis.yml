@@ -1,0 +1,135 @@
+name: Daily Fund Analysis
+
+on:
+  schedule:
+    # 15:40 Asia/Shanghai, Monday-Friday. GitHub cron uses UTC.
+    - cron: "40 7 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Analysis target
+        type: choice
+        options:
+          - all
+          - market
+          - sectors
+        default: all
+      refresh_nav:
+        description: Refresh holding NAV before analysis
+        type: boolean
+        default: true
+      commit_report:
+        description: Commit latest report to analysis/latest.md
+        type: boolean
+        default: false
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      TZ: Asia/Shanghai
+      FH_DATA_DIR: ./data
+      FH_AI_ENABLED: "true"
+      FH_AI_PROTOCOL: ${{ secrets.FH_AI_PROTOCOL || 'openai_responses' }}
+      FH_AI_BASE_URL: ${{ secrets.FH_AI_BASE_URL || 'https://api.openai.com/v1' }}
+      FH_AI_API_KEY: ${{ secrets.FH_AI_API_KEY || secrets.OPENAI_API_KEY }}
+      FH_AI_MODEL: ${{ secrets.FH_AI_MODEL }}
+      FH_AI_TIMEOUT: ${{ secrets.FH_AI_TIMEOUT || '120' }}
+      FH_AI_MAX_TOKENS: ${{ secrets.FH_AI_MAX_TOKENS || '12000' }}
+      FH_PUSH_PROVIDER: ${{ secrets.FH_PUSH_PROVIDER || 'smtp' }}
+      FH_PUSH_MAILS: ${{ secrets.FH_PUSH_MAILS }}
+      FH_PUSH_SMTP_HOST: ${{ secrets.FH_PUSH_SMTP_HOST }}
+      FH_PUSH_SMTP_PORT: ${{ secrets.FH_PUSH_SMTP_PORT || '465' }}
+      FH_PUSH_SMTP_USER: ${{ secrets.FH_PUSH_SMTP_USER }}
+      FH_PUSH_SMTP_PASSWORD: ${{ secrets.FH_PUSH_SMTP_PASSWORD }}
+      FH_PUSH_MAX_CHARS: ${{ secrets.FH_PUSH_MAX_CHARS || '3600' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Validate AI configuration
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+
+          missing = [k for k in ("FH_AI_BASE_URL", "FH_AI_MODEL") if not os.getenv(k)]
+          if missing:
+              print(f"::error::Missing required secret(s): {', '.join(missing)}")
+              sys.exit(1)
+          if os.getenv("FH_AI_BASE_URL") == "https://api.openai.com/v1" and not os.getenv("FH_AI_API_KEY"):
+              print("::error::Set FH_AI_API_KEY or OPENAI_API_KEY for the default OpenAI endpoint")
+              sys.exit(1)
+          PY
+
+      - name: Run unit tests
+        run: pytest
+
+      - name: Print data status before analysis
+        run: fh data-status
+
+      - name: Generate analysis report
+        env:
+          INPUT_TARGET: ${{ inputs.target }}
+          INPUT_REFRESH_NAV: ${{ inputs.refresh_nav }}
+        run: |
+          TARGET="${INPUT_TARGET:-all}"
+          REFRESH_NAV="${INPUT_REFRESH_NAV:-true}"
+          NAV_FLAG="--skip-nav"
+          if [ "$REFRESH_NAV" = "true" ]; then
+            NAV_FLAG="--refresh-nav"
+          fi
+          fh analyze \
+            --target "$TARGET" \
+            --out reports/advice \
+            --force-refresh \
+            "$NAV_FLAG"
+
+      - name: Push report via Email
+        run: |
+          if [ -z "$FH_PUSH_MAILS" ]; then
+            echo "FH_PUSH_MAILS is empty; skip email push."
+            exit 0
+          fi
+          FH_PUSH_ENABLED=true fh push-report \
+            reports/advice/latest.md \
+            --title "基金分析日报 #${{ github.run_number }}"
+
+      - name: Upload analysis artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund-analysis-${{ github.run_id }}
+          path: reports/advice/*.md
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Commit latest report
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_report }}
+        run: |
+          mkdir -p analysis
+          cp reports/advice/latest.md analysis/latest.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add analysis/latest.md
+          if git diff --cached --quiet; then
+            echo "No report changes to commit."
+          else
+            git commit -m "chore: update fund analysis report"
+            git push
+          fi

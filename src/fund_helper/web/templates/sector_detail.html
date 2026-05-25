@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} · 板块行情 · fund-helper{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div style="flex:1;">
+    <h2 style="margin:0;">
+      <a href="/sectors" class="muted" style="text-decoration:none;">板块行情</a>
+      <span class="muted" style="margin:0 6px;">›</span>
+      {{ name }}
+      <span class="sector-cat" style="margin-left:8px;">{{ category_label }}</span>
+    </h2>
+    <p class="muted" style="margin:4px 0 0;">
+      历史 K 线 · 同花顺 (akshare) · 最长保留 180 天 · 当前窗口 <b>{{ window_label }}</b>
+      {% if ths_name and ths_name != name %} · 同花顺映射板块 <code class="kbd">{{ ths_name }}</code>{% endif %}
+      · 现货更新于 {{ refreshed_at }}
+    </p>
+  </div>
+  <div class="seg">
+    {% for k, wlabel, _ in windows %}
+      <a class="seg-btn {{ 'on' if k == window_key else '' }}"
+         href="/sectors/{{ category }}/{{ label | urlencode }}?window={{ k }}">{{ wlabel }}</a>
+    {% endfor %}
+    <a class="seg-btn" href="/sectors/{{ category }}/{{ label | urlencode }}?window={{ window_key }}&refresh=1"
+       title="跳过缓存重新拉取一次">↻ 刷新</a>
+  </div>
+</div>
+
+<div class="card index-card" style="margin-top:12px;">
+  <div class="index-head">
+    <b class="index-name">{{ name }}</b>
+    <span class="muted" style="font-size:12px;">{{ category_label }} · {{ label }}</span>
+    <span style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+      {% if is_fav %}
+        <button class="fav-btn fav-on" id="fav-btn" data-act="del" title="取消收藏">★ 已收藏</button>
+      {% else %}
+        <button class="fav-btn" id="fav-btn" data-act="add" title="加入收藏">☆ 收藏</button>
+      {% endif %}
+    </span>
+  </div>
+
+  {% set up = (row.pct or 0) > 0 %}
+  {% set dn = (row.pct or 0) < 0 %}
+  <div class="index-now">
+    <span class="now-value {{ 'pos' if up else ('neg' if dn else '') }}">
+      {% if row.avg_price is not none %}{{ '%.2f'|format(row.avg_price) }}{% else %}--{% endif %}
+    </span>
+    <span class="now-delta {{ 'pos' if up else ('neg' if dn else '') }}">
+      {% if row.pct is not none %}{{ '%+.2f%%'|format(row.pct) }}{% else %}--{% endif %}
+    </span>
+  </div>
+
+  <div class="index-meta">
+    <span><i>家数</i>{{ row.companies if row.companies is not none else '--' }}</span>
+    <span><i>成交</i>
+      {% if row.total_amt %}
+        {% if row.total_amt >= 1e8 %}{{ '%.1f亿'|format(row.total_amt / 1e8) }}{% elif row.total_amt >= 1e4 %}{{ '%.1f万'|format(row.total_amt / 1e4) }}{% else %}{{ '%.0f'|format(row.total_amt) }}{% endif %}
+      {% else %}--{% endif %}
+    </span>
+    {% if row.leader_name %}
+    <span><i>领涨</i>{{ row.leader_name }}
+      {% if row.leader_pct is not none %}
+        <b class="{{ 'pos' if row.leader_pct > 0 else ('neg' if row.leader_pct < 0 else '') }}">
+          {{ '%+.2f%%'|format(row.leader_pct) }}
+        </b>
+      {% endif %}
+    </span>
+    {% endif %}
+  </div>
+
+  {% if chart %}
+    <div class="index-range-meta">
+      <span>区间 <b>{{ n_obs }} 日</b></span>
+      <span>区间收益
+        <b class="{{ 'pos' if range_ret >= 0 else 'neg' }}">{{ '%+.2f%%'|format(range_ret * 100) }}</b>
+      </span>
+      <span>区间高/低 {{ '%.2f'|format(close_max) }} / {{ '%.2f'|format(close_min) }}</span>
+    </div>
+    <div class="index-chart" id="schart-main" style="height: clamp(280px, 36vw, 420px);"></div>
+    <script>
+    (function(){
+      const dom = document.getElementById('schart-main');
+      const chart = echarts.init(dom);
+      const data = {{ chart|tojson }};
+      const positive = {{ 'true' if range_ret >= 0 else 'false' }};
+      const color = positive ? '#16a34a' : '#dc2626';
+      chart.setOption({
+        tooltip: { trigger: 'axis',
+          formatter: p => p[0].axisValueLabel + '<br/>收盘 ' + (+p[0].data).toFixed(2) },
+        grid:  { left: 50, right: 16, top: 14, bottom: 28 },
+        xAxis: { type: 'category', data: data.dates, boundaryGap: false,
+                 axisLabel: { fontSize: 11, color: '#888' } },
+        yAxis: { type: 'value', scale: true,
+                 axisLabel: { fontSize: 11, color: '#888' } },
+        series: [{
+          type: 'line', data: data.values,
+          showSymbol: true, symbol: 'circle', symbolSize: 5,
+          smooth: false, connectNulls: true,
+          lineStyle: { width: 1.4, color: color, opacity: 0.9 },
+          itemStyle: { color: color, opacity: 0.95 },
+        }],
+      });
+      window.addEventListener('resize', () => chart.resize());
+    })();
+    </script>
+  {% else %}
+    <div class="empty" style="margin-top:16px;">
+      暂无 <b>{{ name }}</b> 的历史 K 线。
+      {% if not ths_name %}（未在同花顺找到匹配板块「{{ name }}」）{% endif %}
+      可点击「刷新」重试。
+    </div>
+  {% endif %}
+</div>
+
+<script>
+(function(){
+  const btn = document.getElementById('fav-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const act = btn.dataset.act;
+    btn.disabled = true;
+    try {
+      if (act === 'add') {
+        const r = await fetch('/api/sector/favorite', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({category: '{{ category }}', label: '{{ label }}', name: '{{ name }}'})
+        });
+        if (!r.ok) throw new Error(await r.text());
+      } else {
+        const url = `/api/sector/favorite?category={{ category }}&label=${encodeURIComponent('{{ label }}')}`;
+        const r = await fetch(url, {method: 'DELETE'});
+        if (!r.ok) throw new Error(await r.text());
+      }
+      window.location.reload();
+    } catch (err) {
+      alert('收藏操作失败: ' + err.message);
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
+{% endblock %}

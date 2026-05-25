@@ -1,0 +1,13 @@
+# 基金筛选报告
+
+_生成时间：{{ generated_at }}_
+
+{% if spec_desc %}
+**筛选条件：** {{ spec_desc }}
+{% endif %}
+
+| 排名 | 代码 | 名称 | 类型 | 年化 | Sharpe | 最大回撤 | 规模(亿) | 综合分 |
+|----:|:----|:----|:----|----:|----:|----:|----:|----:|
+{% for r in rows %}
+| {{ loop.index }} | {{ r.code }} | {{ r.name }} | {{ r.fund_type }} | {{ '%.2f%%' % ((r.annualized_return or 0) * 100) }} | {{ '%.2f' % (r.sharpe or 0) }} | {{ '%.2f%%' % ((r.max_dd or 0) * 100) }} | {{ '%.1f' % ((r.aum or 0) / 1e8) }} | {{ '%.2f' % (r._score or 0) }} |
+{% endfor %}
