@@ -34,10 +34,14 @@ app.add_typer(refresh_app, name="refresh")
 def refresh_universe(ctx: typer.Context) -> None:
     """Pull full fund list and upsert into local cache."""
     from .datasource import build_default
+    from .storage import FundRepo, connect
 
     src = build_default(ctx.obj)
     funds = src.list_funds()
-    console.print(f"[green]ok[/green] fetched {len(funds)} funds via {src.name}")
+    repo = FundRepo(connect(ctx.obj.data_dir / "fund.db"))
+    for fund in funds:
+        repo.upsert(fund, source=src.name)
+    console.print(f"[green]ok[/green] fetched and cached {len(funds)} funds via {src.name}")
 
 
 @refresh_app.command("nav")
@@ -103,6 +107,30 @@ def refresh_holdings(
         console.print(f"[red]{len(fails)} failed[/red]: {fails}")
 
 
+@refresh_app.command("realtime")
+def refresh_realtime(ctx: typer.Context) -> None:
+    """Refresh public intraday fund estimate quotes for configured holdings."""
+    from .portfolio.holdings import load_holdings
+    from .services.fund_realtime_service import FundRealtimeService
+
+    h = load_holdings()
+    svc = FundRealtimeService(ctx.obj)
+    quotes = svc.get_quotes([p.code for p in h.positions], force_refresh=True)
+    table = Table(title="fund realtime estimates")
+    for col in ["code", "name", "estimate_pct", "estimate_time", "source"]:
+        table.add_column(col)
+    for p in h.positions:
+        q = quotes.get(p.code)
+        table.add_row(
+            p.code,
+            p.name,
+            "--" if q is None or q.estimate_pct is None else f"{q.estimate_pct:+.2f}%",
+            "--" if q is None else (q.estimate_time or "--"),
+            "--" if q is None else q.source,
+        )
+    console.print(table)
+
+
 # --- report ----------------------------------------------------------------
 
 @app.command()
@@ -113,11 +141,12 @@ def report(
 ) -> None:
     """Render a single-fund analysis report (Markdown)."""
     from .report.render import render_fund_card
+    from .utils import atomic_write_text
 
     md = render_fund_card(ctx.obj, code)
     out.mkdir(parents=True, exist_ok=True)
     target = out / f"fund_{code}.md"
-    target.write_text(md, encoding="utf-8")
+    atomic_write_text(target, md)
     console.print(f"[green]ok[/green] wrote {target}")
 
 
@@ -218,6 +247,35 @@ def data_status(ctx: typer.Context) -> None:
     console.print(_build_data_quality(ctx.obj))
 
 
+def _print_market_dynamics(ctx: typer.Context, *, refresh: bool, max_rows: int) -> None:
+    from rich.markdown import Markdown
+
+    from .services.company_watch_service import CompanyWatchService, render_company_watch_markdown
+
+    panel = CompanyWatchService(ctx.obj).get_panel(force_refresh=True, refresh_news=refresh)
+    console.print(Markdown(render_company_watch_markdown(panel, max_rows=max_rows)))
+
+
+@app.command("market-dynamics")
+def market_dynamics_cmd(
+    ctx: typer.Context,
+    refresh: bool = typer.Option(False, "--refresh/--no-refresh", help="Refresh news cache before matching"),
+    max_rows: int = typer.Option(18, "--max-rows", min=1, max=80),
+) -> None:
+    """Show market dynamics for configured companies and fund top holdings."""
+    _print_market_dynamics(ctx, refresh=refresh, max_rows=max_rows)
+
+
+@app.command("company-watch")
+def company_watch_cmd(
+    ctx: typer.Context,
+    refresh: bool = typer.Option(False, "--refresh/--no-refresh", help="Refresh news cache before matching"),
+    max_rows: int = typer.Option(18, "--max-rows", min=1, max=80),
+) -> None:
+    """Backward-compatible alias for market-dynamics."""
+    _print_market_dynamics(ctx, refresh=refresh, max_rows=max_rows)
+
+
 @app.command("push-report")
 def push_report_cmd(
     ctx: typer.Context,
@@ -304,7 +362,7 @@ def _advice_markdown(
 @app.command("analyze")
 def analyze(
     ctx: typer.Context,
-    target: str = typer.Option("all", "--target", "-t", help="market | sectors | all"),
+    target: str = typer.Option("all", "--target", "-t", help="market | sectors | holdings | all"),
     out: Path = typer.Option(Path("reports/advice"), "--out", "-o"),
     refresh_nav: bool = typer.Option(False, "--refresh-nav/--skip-nav"),
     nav_months: int = typer.Option(6, "--nav-months", min=1),
@@ -313,20 +371,26 @@ def analyze(
     include_prompt: bool = typer.Option(False, "--include-prompt/--no-include-prompt"),
 ) -> None:
     """Generate an automated Markdown analysis report for GitHub Actions."""
-    from .services.ai_service import analyze_market, analyze_sectors
+    from .services.ai_service import (
+        analyze_market,
+        analyze_sectors,
+        analyze_holdings,
+        analyze_full,
+        format_ai_call_info,
+    )
+    from .utils import atomic_write_text
 
     target = target.lower().strip()
     if target == "all":
-        jobs = [
-            ("大盘分析", analyze_market),
-            ("板块与持仓相关分析", analyze_sectors),
-        ]
+        jobs = [("完整分析报告（大盘+板块+持仓）", analyze_full)]
     elif target == "market":
         jobs = [("大盘分析", analyze_market)]
     elif target in {"sector", "sectors"}:
         jobs = [("板块与持仓相关分析", analyze_sectors)]
+    elif target == "holdings":
+        jobs = [("持仓基金分析与操作建议", analyze_holdings)]
     else:
-        raise typer.BadParameter("target must be one of: market, sectors, all")
+        raise typer.BadParameter("target must be one of: market, sectors, holdings, all")
 
     errors: list[str] = []
     if refresh_nav:
@@ -335,6 +399,7 @@ def analyze(
             errors.append(f"NAV refresh failed for: {', '.join(nav_fails)}")
 
     sections: list[tuple[str, str, str | None]] = []
+    guardrail_findings = 0
     for title, fn in jobs:
         console.print(f"[cyan]analyzing[/cyan] {title} ...")
         try:
@@ -344,6 +409,9 @@ def analyze(
             errors.append(msg)
             sections.append((title, f"> 自动分析失败：{e}", None))
             continue
+        console.print(f"[dim]{format_ai_call_info(result.get('ai_call'))}[/dim]")
+        guardrails = result.get("guardrails", "")
+        guardrail_findings += guardrails.count("[P1]") + guardrails.count("[P2]") + guardrails.count("[P3]")
         sections.append((title, result.get("text", ""), result.get("prompt")))
 
     now = datetime.now(timezone(timedelta(hours=8)))
@@ -356,46 +424,80 @@ def analyze(
     )
     stamp = now.strftime("%Y%m%d_%H%M")
     target_path = out / f"advice_{stamp}.md"
-    target_path.write_text(report, encoding="utf-8")
+    atomic_write_text(target_path, report)
     console.print(f"[green]ok[/green] wrote {target_path}")
+    try:
+        from .services.advice_log import record_report
+        record_report(
+            report_path=target_path,
+            target=target,
+            title=", ".join(title for title, _fn in jobs),
+            text=report,
+            guardrail_findings=guardrail_findings,
+        )
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[yellow]warning[/yellow] advice log failed: {e}")
     if latest:
         latest_path = out / "latest.md"
-        latest_path.write_text(report, encoding="utf-8")
+        atomic_write_text(latest_path, report)
         console.print(f"[green]ok[/green] wrote {latest_path}")
     if errors:
         raise typer.Exit(code=1)
 
 
+@app.command("advice-log")
+def advice_log(
+    ctx: typer.Context,
+    limit: int = typer.Option(10, "--limit", "-n"),
+    review: bool = typer.Option(False, "--review/--no-review"),
+    horizon_days: int = typer.Option(7, "--horizon-days"),
+) -> None:
+    """List archived advice reports, optionally with coarse return review."""
+    from .services.advice_log import load_entries, review_entries
+
+    if review:
+        rows = review_entries(ctx.obj, horizon_days=horizon_days, limit=limit)
+        table = Table(title=f"advice review (horizon={horizon_days}d)")
+        for col in ["generated_at", "target", "age_days", "portfolio_return", "status"]:
+            table.add_column(col)
+        for row in rows:
+            ret = row["portfolio_return"]
+            table.add_row(
+                str(row["generated_at"]),
+                str(row["target"]),
+                str(row["age_days"]),
+                "--" if ret is None else f"{ret:+.2%}",
+                str(row["status"]),
+            )
+        console.print(table)
+        return
+
+    table = Table(title=f"latest {limit} advice reports")
+    for col in ["generated_at", "target", "guardrails", "actions", "path"]:
+        table.add_column(col)
+    for entry in load_entries(limit=limit):
+        table.add_row(
+            entry.generated_at,
+            entry.target,
+            str(entry.guardrail_findings),
+            str(len(entry.action_lines)),
+            entry.report_path,
+        )
+    console.print(table)
 
 
-# --- serve -----------------------------------------------------------------
+
+
+# --- tui -------------------------------------------------------------------
 
 @app.command()
-def serve(
+def tui(
     ctx: typer.Context,
-    host: str = typer.Option("127.0.0.1", "--host"),
-    port: int = typer.Option(7788, "--port"),
-    open_browser: bool = typer.Option(True, "--open/--no-open"),
 ) -> None:
-    """Launch the local web UI."""
-    import threading
-    import time
-    import webbrowser
+    """Launch the terminal UI."""
+    from .tui import run_tui
 
-    import uvicorn
-
-    from .web import create_app
-
-    application = create_app(ctx.obj)
-
-    if open_browser:
-        url = f"http://{host}:{port}/"
-        def _open():
-            time.sleep(0.8)
-            webbrowser.open(url)
-        threading.Thread(target=_open, daemon=True).start()
-
-    uvicorn.run(application, host=host, port=port, log_level=ctx.obj.log_level.lower())
+    run_tui(ctx.obj)
 
 
 if __name__ == "__main__":

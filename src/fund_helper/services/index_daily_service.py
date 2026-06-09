@@ -21,7 +21,7 @@ TTL_HOURS = 24
 @dataclass(slots=True)
 class IndexSeries:
     secid: str
-    frame: pd.DataFrame  # trade_date, close, pct_change
+    frame: pd.DataFrame  # trade_date, open, close, high, low, volume, pct_change
 
 
 class IndexDailyService:
@@ -105,11 +105,11 @@ class IndexDailyService:
 
     def _load(self, secid: str, start: date, end: date) -> IndexSeries:
         cur = self.conn.execute(
-            """SELECT trade_date,close,pct_change FROM index_daily
+            """SELECT trade_date,open,close,high,low,volume,pct_change FROM index_daily
                WHERE secid=? AND trade_date BETWEEN ? AND ?
                ORDER BY trade_date ASC""",
             (secid, start.isoformat(), end.isoformat()),
         )
         rows = cur.fetchall()
-        frame = pd.DataFrame(rows, columns=["trade_date", "close", "pct_change"])
+        frame = pd.DataFrame(rows, columns=["trade_date", "open", "close", "high", "low", "volume", "pct_change"])
         return IndexSeries(secid=secid, frame=frame)

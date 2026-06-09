@@ -36,6 +36,7 @@ htmlcov/
 
 # Local API credentials (never commit)
 config/config.json
+config.yml
 .env
 .env.*
 

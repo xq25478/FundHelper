@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fund_helper.services import news_service
+from fund_helper.services.news_relevance import RelevanceScorer
 from fund_helper.storage import connect
 
 
@@ -35,3 +36,29 @@ def test_news_relevance_is_persisted(tmp_path, monkeypatch):
     mirror = panel.items_by_category["sentiment"][0]
     assert mirror.relevance_score == item.relevance_score
     assert mirror.themes == item.themes
+
+
+def test_news_relevance_avoids_latin_substring_false_positive():
+    rel = RelevanceScorer().score("SpaceX 提交 IPO 文件，披露亏损。")
+
+    assert rel.score == 0
+    assert "IP" not in rel.keywords
+
+
+def test_policy_relevance_uses_title_for_cctv_bundle():
+    row = {
+        "source": "新闻联播",
+        "title": "习近平同塞尔维亚总统会谈",
+        "content": "节目其他段落提到人工智能产业发展。",
+        "published_at": "2026-05-25",
+        "url": None,
+    }
+
+    items = news_service._make_items(
+        [row],
+        base_category="policy",
+        fetched_at="2026-05-26T10:00:00+08:00",
+        scorer=RelevanceScorer(),
+    )
+
+    assert items[0].relevance_score == 0

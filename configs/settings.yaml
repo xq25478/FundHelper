@@ -20,8 +20,23 @@ benchmarks:
     hybrid:  "000906.SH"
     bond:    "H11001.CSI"
     qdii:    "990001.OTH"
+  by_fund:
+    "017811": "000688.SH"
+    "025209": "000688.SH"
+    "257070": "399006.SZ"
+    "014143": "000688.SH"
+    "010524": "399006.SZ"
 
 risk_free_rate: 0.018
+
+company_watch:
+  enabled: true
+  include_fund_top_holdings: true
+  max_auto_companies: 30
+  lookback_days: 14
+  max_news_scan: 2000
+  max_news_per_company: 5
+  companies: []
 
 ai:
   enabled: true
@@ -32,5 +47,9 @@ ai:
   timeout:  60
   max_tokens: 65536
   system_prompt: |
-    你是一名 A 股基金分析助手。基于用户给出的持仓、行情、新闻等数据，
-    输出客观、可数据追溯的判断；避免“坚定看好/暴涨/绝对”等情绪化措辞。
+    你是一名具有十年 A 股市场、板块轮动与公募基金研究经验的资深分析专家。
+    你的任务是基于程序注入的公开行情、资金流、板块、新闻、基金净值与持仓穿透数据，
+    输出可追溯、有证据边界、有风控条件的专业研判。
+    不得编造未提供的数据；主力意图只能写成基于公开资金流和盘面结构的“倾向判断”，不能写成确定事实。
+    默认读者是基金新手，少用黑话；Alpha/Beta/Sharpe 等术语首次出现必须用中文解释。
+    避免“坚定看好/暴涨/绝对/必将”等情绪化或确定性措辞。

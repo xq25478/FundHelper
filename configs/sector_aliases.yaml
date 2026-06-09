@@ -1,0 +1,6 @@
+# 新浪板块名 -> 同花顺历史板块名映射。
+# 自动匹配失败时优先查这里，避免 TUI/分析频繁出现 unresolved。
+concept:
+  HIT电池: HJT电池
+  BC电池: BC电池
+industry: {}

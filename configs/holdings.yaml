@@ -1,6 +1,6 @@
 # 我的持仓（占组合权重）。代码字段如果与天天基金对不上，会在 refresh 时打印告警。
 name: my-holdings
-as_of: 2026-05-16
+as_of: 2026-05-27
 source: 微信小程序截图
 holdings:
   - code: "017811"
@@ -9,8 +9,8 @@ holdings:
   - code: "025209"
     name: 永赢先锋半导体智选混合C
     weight: 0.2003
-  - code: "025857"
-    name: 华夏中证电网设备主题ETF联接C
+  - code: "257070"
+    name: 国联安优选行业混合
     weight: 0.1941
   - code: "014143"
     name: 银河创新成长混合C

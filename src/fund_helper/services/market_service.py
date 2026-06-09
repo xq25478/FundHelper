@@ -100,8 +100,9 @@ class MarketService:
             else:
                 a_share.append(IndexQuote(
                     secid=secid, name=name, market=market,
-                    pre_close=None, now=None, delta=None, pct=None,
-                    high=None, low=None, last_ts=None, trade_date=None,
+                    pre_close=None, now=None, open=None, delta=None, pct=None,
+                    high=None, low=None, volume=None, amount=None,
+                    last_ts=None, trade_date=None,
                 ))
         return MarketPanel(
             a_share=a_share, refreshed_at=_now_cst(),
@@ -113,19 +114,20 @@ class MarketService:
         now_iso = _now_cst().replace(tzinfo=None).isoformat(timespec="seconds")
         rows = [
             (q.secid, q.name, q.market, q.trade_date,
-             q.pre_close, q.now, q.delta, q.pct, q.high, q.low,
-             q.last_ts, now_iso)
+             q.pre_close, q.now, q.open, q.delta, q.pct, q.high, q.low,
+             q.volume, q.amount, q.last_ts, now_iso)
             for q in quotes.values()
         ]
         self.conn.executemany(
             """
             INSERT INTO index_snapshot
-              (secid,name,market,trade_date,pre_close,now,delta,pct,high,low,last_ts,fetched_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+              (secid,name,market,trade_date,pre_close,now,open,delta,pct,high,low,volume,amount,last_ts,fetched_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(secid) DO UPDATE SET
               name=excluded.name, market=excluded.market, trade_date=excluded.trade_date,
-              pre_close=excluded.pre_close, now=excluded.now, delta=excluded.delta,
+              pre_close=excluded.pre_close, now=excluded.now, open=excluded.open, delta=excluded.delta,
               pct=excluded.pct, high=excluded.high, low=excluded.low,
+              volume=excluded.volume, amount=excluded.amount,
               last_ts=excluded.last_ts, fetched_at=excluded.fetched_at
             """,
             rows,
@@ -135,13 +137,13 @@ class MarketService:
     def _load_snapshot(self, secid: str) -> IndexQuote | None:
         row = self.conn.execute(
             "SELECT secid,name,market,trade_date,pre_close,now,delta,pct,"
-            "high,low,last_ts FROM index_snapshot WHERE secid=?",
+            "high,low,last_ts,open,volume,amount FROM index_snapshot WHERE secid=?",
             (secid,),
         ).fetchone()
         if not row or row[5] is None:
             return None
         return IndexQuote(
             secid=row[0], name=row[1], market=row[2], trade_date=row[3],
-            pre_close=row[4], now=row[5], delta=row[6], pct=row[7],
-            high=row[8], low=row[9], last_ts=row[10],
+            pre_close=row[4], now=row[5], open=row[11], delta=row[6], pct=row[7],
+            high=row[8], low=row[9], volume=row[12], amount=row[13], last_ts=row[10],
         )

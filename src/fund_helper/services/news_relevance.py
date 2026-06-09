@@ -11,6 +11,7 @@ Output:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 # --- theme -> keyword 索引 (skill §二/§七) -----------------------------
@@ -45,6 +46,8 @@ THEME_KEYWORDS: dict[str, list[str]] = {
         "运营商", "中国移动", "中国电信", "中国联通", "基站", "射频",
         "CPO", "硅光", "中际旭创", "新易盛", "天孚通信", "光迅",
         "信维通信", "华为", "ZTE", "中兴通讯", "卫星互联网",
+        "PCB", "印制电路板", "覆铜板", "CCL", "HDI", "沪电股份",
+        "胜宏科技", "深南电路", "鹏鼎控股", "生益科技",
     ],
     "AI 上游 / 国产替代": [  # buyer.md 核心仰角
         "国产替代", "自主可控", "国产化", "国产", "卡脖子", "外资限制",
@@ -58,7 +61,7 @@ THEME_KEYWORDS: dict[str, list[str]] = {
 HOLDING_THEMES: dict[str, list[str]] = {
     "017811": ["人工智能", "算力", "AI 上游 / 国产替代"],
     "025209": ["半导体", "AI 上游 / 国产替代"],
-    "025857": ["电力"],
+    "257070": ["通信", "算力"],
     "014143": ["人工智能", "算力", "半导体"],
     "010524": ["通信", "算力"],
 }
@@ -103,7 +106,7 @@ class RelevanceScorer:
         for theme, kws in THEME_KEYWORDS.items():
             hit_kw: list[str] = []
             for kw in kws:
-                if kw in t and kw not in seen_kw:
+                if _keyword_hit(t, kw) and kw not in seen_kw:
                     hit_kw.append(kw)
                     seen_kw.add(kw)
             if hit_kw:
@@ -118,3 +121,17 @@ def all_keywords() -> list[str]:
     for kws in THEME_KEYWORDS.values():
         out.extend(kws)
     return out
+
+
+def _keyword_hit(text: str, keyword: str) -> bool:
+    """Match Latin tickers/abbreviations without substring false positives.
+
+    Examples: "IP" should not match "IPO"; "AI" should still match "AI产业".
+    Chinese keywords keep normal substring matching.
+    """
+    if not keyword:
+        return False
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 +./-]*", keyword):
+        pattern = rf"(?<![A-Za-z0-9]){re.escape(keyword)}(?![A-Za-z0-9])"
+        return re.search(pattern, text, flags=re.I) is not None
+    return keyword in text

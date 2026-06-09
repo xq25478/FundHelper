@@ -8,9 +8,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import yaml
 
 from ..config import AppConfig
 from ..datasource import sector_ths as src
@@ -52,7 +54,7 @@ class SectorDailyService:
         ths_name: str | None = None
         if need_remote:
             try:
-                ths_name = src.resolve_ths_name(category, name)
+                ths_name = _alias_name(category, name) or src.resolve_ths_name(category, name)
                 if not ths_name:
                     log.warning("sector_daily ths_name unresolved category=%s name=%s", category, name)
                 else:
@@ -133,3 +135,15 @@ class SectorDailyService:
         if not rows:
             return pd.DataFrame(columns=["trade_date", "close", "pct_change"])
         return pd.DataFrame(rows, columns=["trade_date", "close", "pct_change"])
+
+
+def _alias_name(category: str, name: str) -> str | None:
+    path = Path("configs/sector_aliases.yaml")
+    if not path.exists():
+        return None
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return None
+    item = raw.get(category, {}).get(name)
+    return str(item) if item else None

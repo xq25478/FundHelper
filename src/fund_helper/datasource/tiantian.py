@@ -12,6 +12,7 @@ Notes:
 from __future__ import annotations
 
 import logging
+import json
 import re
 from datetime import date, timedelta
 from typing import Any
@@ -27,6 +28,7 @@ log = logging.getLogger(__name__)
 LSJZ_URL = "https://api.fund.eastmoney.com/f10/lsjz"
 LSJZ_REFERER = "http://fundf10.eastmoney.com/"
 LIST_URL = "https://fund.eastmoney.com/js/fundcode_search.js"
+ESTIMATE_URL = "https://fundgz.1234567.com.cn/js/{code}.js"
 
 # Eastmoney fund-type Chinese label -> our enum
 _TYPE_MAP: dict[str, FundType] = {
@@ -47,6 +49,48 @@ def _to_float(x: Any) -> float | None:
         return float(x)
     except (TypeError, ValueError):
         return None
+
+
+def parse_fund_estimate_jsonp(text: str) -> dict[str, Any] | None:
+    """Parse fundgz JSONP estimate payload.
+
+    Example:
+    jsonpgz({"fundcode":"001186","name":"...","jzrq":"2026-05-22",
+             "dwjz":"1.2345","gsz":"1.2500","gszzl":"1.26","gztime":"2026-05-25 14:57"})
+    """
+    if not text:
+        return None
+    m = re.search(r"jsonpgz\((\{.*\})\)\s*;?", text.strip(), flags=re.S)
+    if not m:
+        return None
+    try:
+        raw = json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return None
+    return {
+        "code": str(raw.get("fundcode") or ""),
+        "name": raw.get("name") or "",
+        "nav_date": raw.get("jzrq") or None,
+        "unit_nav": _to_float(raw.get("dwjz")),
+        "estimate_nav": _to_float(raw.get("gsz")),
+        "estimate_pct": _to_float(raw.get("gszzl")),
+        "estimate_time": raw.get("gztime") or None,
+    }
+
+
+def fetch_fund_estimate(code: str, *, timeout: int = 10) -> dict[str, Any] | None:
+    """Fetch intraday fund estimate from Tiantian/Fundgz.
+
+    `estimate_pct` is expressed in percent units, e.g. 1.23 means +1.23%.
+    """
+    client = make_client(timeout=timeout)
+    url = ESTIMATE_URL.format(code=code)
+    r = client.get(url)
+    r.raise_for_status()
+    data = parse_fund_estimate_jsonp(r.text)
+    if not data or not data.get("code"):
+        return None
+    return data
 
 
 class TiantianDataSource(FundDataSource):

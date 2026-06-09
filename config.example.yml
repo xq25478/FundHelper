@@ -1,0 +1,155 @@
+# =============================================================================
+# fund-helper 用户配置文件模板
+# 复制为 config.yml 并填入你的实际数据：
+#   cp config.example.yml config.yml
+# config.yml 已加入 .gitignore，不会被提交到 Git
+# =============================================================================
+
+# ---- 基础设置 ----
+data_dir: ./data
+log_level: INFO                   # DEBUG | INFO | WARNING | ERROR
+risk_free_rate: 0.018             # 无风险利率（用于 Sharpe 计算）
+
+# ---- 数据源 ----
+datasource:
+  primary: eastmoney              # eastmoney | tiantian | akshare | composite
+  fallback: [tiantian, akshare]
+  http:
+    timeout: 10
+    retries: 3
+    rate_limit_per_sec: 5
+
+# ---- 缓存 ----
+cache:
+  nav_ttl_hours: 12               # 净值缓存有效期（小时）
+  meta_ttl_hours: 168             # 元信息缓存有效期（小时）
+
+# ---- 基准 ----
+benchmarks:
+  default: "000300.SH"            # 沪深300
+  by_type:
+    equity:  "000300.SH"
+    hybrid:  "000906.SH"
+    bond:    "H11001.CSI"
+    qdii:    "990001.OTH"
+  # 可选：为具体基金指定“主题代理基准”。当前内置支持：
+  # 000001.SH/1.000001 上证指数、000300.SH/1.000300 沪深300、
+  # 399006.SZ/0.399006 创业板指、000688.SH/1.000688 科创50。
+  by_fund:
+    "017811": "000688.SH"
+    "025209": "000688.SH"
+    "257070": "399006.SZ"
+    "014143": "000688.SH"
+    "010524": "399006.SZ"
+
+# ---- AI 大模型配置 ----
+ai:
+  enabled: true
+  protocol: openai_chat             # openai_chat (DeepSeek) | anthropic | openai_responses
+  base_url: "https://api.deepseek.com/v1"
+  api_key: "sk-your-deepseek-api-key"
+  model: "deepseek-chat"            # deepseek-chat | deepseek-reasoner
+  timeout: 120
+  max_tokens: 12000
+  system_prompt: |
+    你是一名具有十年 A 股市场、板块轮动与公募基金研究经验的资深分析专家。
+    基于程序注入的公开行情、资金流、板块、新闻、基金净值与持仓穿透数据，
+    输出可追溯、有证据边界、有风控条件的专业研判。
+    主力意图只能写成基于公开资金流和盘面结构的“倾向判断”，不能写成确定事实。
+    默认读者是基金新手，少用黑话；Alpha/Beta/Sharpe 等术语首次出现必须用中文解释。
+    避免“坚定看好/暴涨/绝对/必将”等情绪化或确定性措辞。
+
+# ---- 邮件推送 (SMTP) ----
+push:
+  enabled: false
+  provider: smtp
+  timeout: 15
+  max_chars: 50000               # 邮件最大字符数（设置足够大，不截断报告）
+  smtp:
+    host: smtp.qq.com
+    port: 465                     # 465=SSL, 587=STARTTLS
+    user: your_email@qq.com
+    password: your_smtp_auth_code
+    use_tls: true
+  mails:                          # 收件人列表
+    - your_email@qq.com
+    # - another@example.com       # 可添加多个
+
+# ---- 投资者画像 ----
+buyer_profile: |
+  # 持有者画像 / Buyer Profile
+
+  ## 核心投资信念
+  1. 长期高置信偏好全球 AI 浪潮，把 AI 视作未来十年的重要技术与产业周期
+  2. 优先配置 AI 上游与基础设施——半导体设备/芯片、存储、通信、PCB/CPO/光模块等算力硬件
+  3. 长期跟踪国产芯片自主化，5-10年长期主线，但结论需要由订单、业绩、政策与价格趋势验证
+
+  ## 行业偏好
+  - ⭐⭐⭐ 半导体设备/材料/芯片、存储
+  - ⭐⭐⭐ 算力硬件（PCB/CPO/光模块/高速互联）
+  - ⭐⭐   通信（光模块/5G/6G）
+  - ⭐     电力/电网（当前不持有，仅观察）
+  - ⭐     AI 应用/模型
+
+  ## 风险偏好
+  - 进攻型，可接受组合层面 -30% 最大回撤
+  - 持有久期 3-5 年，不做日度择时
+  - 单只基金权重 ≤ 25%
+
+  ## 选基逻辑
+  - 优先 C 类份额
+  - ETF 联接用于跟踪板块整体涨跌，主动基金用于争取基金经理选股带来的额外收益
+  - 偏好规模 ≥ 2 亿、运作 ≥ 1 年
+
+# ---- 可选：基金档案（无公开接口时先手工维护，AI 不会自行编造）----
+fund_profiles:
+  "017811":
+    category: 主动权益/AI主题
+    manager: ""
+    aum: ""
+    fee: C类
+    benchmark: "000688.SH"
+    note: "若未填写基金经理/规模，报告只能标注缺口，不能编造。"
+
+# ---- 市场动态（重点公司消息）----
+# 默认会自动把“持仓基金前十大重仓股”加入观察名单。
+# companies 里可以额外添加你想长期盯的公司，aliases 建议写简称/旧名/常见英文名。
+company_watch:
+  enabled: true
+  include_fund_top_holdings: true
+  max_auto_companies: 30
+  lookback_days: 14
+  max_news_scan: 2000
+  max_news_per_company: 5
+  companies:
+    # - code: "688981"
+    #   name: 中芯国际
+    #   aliases: ["SMIC"]
+    #   themes: ["半导体制造", "国产替代"]
+    #   role: "晶圆制造龙头"
+    #   priority: 3
+
+# ---- 持仓基金 ----
+holdings:
+  name: my-holdings
+  as_of: 2026-05-27
+  source: 微信小程序截图
+  positions:
+    # - code: "000001"
+    #   name: 示例基金名称C
+    #   weight: 0.25
+    - code: "017811"
+      name: 东方人工智能主题混合C
+      weight: 0.2317
+    - code: "025209"
+      name: 永赢先锋半导体智选混合C
+      weight: 0.2003
+    - code: "257070"
+      name: 国联安优选行业混合
+      weight: 0.1941
+    - code: "014143"
+      name: 银河创新成长混合C
+      weight: 0.1905
+    - code: "010524"
+      name: 银华中证5G通信主题ETF联接C
+      weight: 0.1834

@@ -24,8 +24,6 @@ dependencies = [
     "python-dateutil>=2.9",
     "requests>=2.31",
     "akshare>=1.13",
-    "fastapi>=0.110",
-    "uvicorn[standard]>=0.27",
     "pyarrow>=15",
     "efinance>=0.5",
 ]

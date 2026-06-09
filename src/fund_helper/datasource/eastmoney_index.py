@@ -13,6 +13,8 @@ Strategy: try Sina first; if it raises, fall back to efinance.
 from __future__ import annotations
 
 import logging
+import io
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -38,10 +40,13 @@ class IndexQuote:
     market: str
     pre_close: float | None
     now: float | None
+    open: float | None
     delta: float | None
     pct: float | None
     high: float | None
     low: float | None
+    volume: float | None
+    amount: float | None
     last_ts: str | None
     trade_date: str | None
     trends: list[IndexTrendPoint] = field(default_factory=list)
@@ -90,7 +95,8 @@ class EastmoneyIndexSource:
     def _fetch_via_sina(self, targets: list[tuple[str, str, str]]
                         ) -> dict[str, IndexQuote]:
         import akshare as ak
-        df = ak.stock_zh_index_spot_sina()
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            df = ak.stock_zh_index_spot_sina()
         if df is None or df.empty:
             return {}
         results: dict[str, IndexQuote] = {}
@@ -102,17 +108,20 @@ class EastmoneyIndexSource:
             r = row.iloc[0]
             now   = _safe(r.get('最新价'))
             pre   = _safe(r.get('昨收'))
+            open_ = _safe(r.get('今开'))
             delta = _safe(r.get('涨跌额'))
             pct_v = _safe(r.get('涨跌幅'))      # already in percent
             pct   = pct_v / 100.0 if pct_v is not None else None
             high  = _safe(r.get('最高'))
             low   = _safe(r.get('最低'))
+            volume = _safe(r.get('成交量'))
+            amount = _safe(r.get('成交额'))
             results[secid] = IndexQuote(
                 secid=secid,
                 name=display or str(r.get('名称') or ''),
                 market=market,
-                pre_close=pre, now=now, delta=delta, pct=pct,
-                high=high, low=low,
+                pre_close=pre, now=now, open=open_, delta=delta, pct=pct,
+                high=high, low=low, volume=volume, amount=amount,
                 last_ts=None, trade_date=None,
             )
         return results
@@ -121,7 +130,8 @@ class EastmoneyIndexSource:
     def _fetch_via_efinance(self, targets: list[tuple[str, str, str]]
                             ) -> dict[str, IndexQuote]:
         import efinance as ef
-        df = ef.stock.get_realtime_quotes(['沪深系列指数'])
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            df = ef.stock.get_realtime_quotes(['沪深系列指数'])
         df['股票代码'] = df['股票代码'].astype(str).str.zfill(6)
         results: dict[str, IndexQuote] = {}
         for secid, display, market in targets:
@@ -132,17 +142,20 @@ class EastmoneyIndexSource:
             r = row.iloc[0]
             pre   = _safe(r.get('昨日收盘'))
             now   = _safe(r.get('最新价'))
+            open_ = _safe(r.get('今开'))
             delta = _safe(r.get('涨跌额'))
             pct_v = _safe(r.get('涨跌幅'))
             pct   = pct_v / 100.0 if pct_v is not None else None
             high  = _safe(r.get('最高'))
             low   = _safe(r.get('最低'))
+            volume = _safe(r.get('成交量'))
+            amount = _safe(r.get('成交额'))
             results[secid] = IndexQuote(
                 secid=secid,
                 name=display or str(r.get('股票名称') or ''),
                 market=market,
-                pre_close=pre, now=now, delta=delta, pct=pct,
-                high=high, low=low,
+                pre_close=pre, now=now, open=open_, delta=delta, pct=pct,
+                high=high, low=low, volume=volume, amount=amount,
                 last_ts=str(r.get('更新时间')   or '') or None,
                 trade_date=str(r.get('最新交易日') or '') or None,
             )

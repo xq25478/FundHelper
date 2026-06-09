@@ -35,3 +35,36 @@ ai:
     assert cfg.ai.model == "remote-model"
     assert cfg.ai.timeout == 120
     assert cfg.ai.max_tokens == 12000
+
+
+def test_explicit_config_path_wins_over_config_yml(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yml").write_text(
+        """
+ai:
+  enabled: true
+  protocol: anthropic
+  base_url: https://wrong.example/v1
+  api_key: EMPTY
+  model: wrong-model
+""",
+        encoding="utf-8",
+    )
+    explicit = tmp_path / "custom.yaml"
+    explicit.write_text(
+        """
+ai:
+  enabled: true
+  protocol: openai_chat
+  base_url: https://right.example/v1
+  api_key: EMPTY
+  model: right-model
+""",
+        encoding="utf-8",
+    )
+
+    cfg = load_config(explicit)
+
+    assert cfg.ai.protocol == "openai_chat"
+    assert cfg.ai.base_url == "https://right.example/v1"
+    assert cfg.ai.model == "right-model"

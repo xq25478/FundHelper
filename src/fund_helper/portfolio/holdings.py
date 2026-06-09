@@ -29,9 +29,8 @@ class Holdings:
         return {p.code: p.weight / total for p in self.positions}
 
 
-def load_holdings(path: str | Path = "configs/holdings.yaml") -> Holdings:
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-    items = raw.get("holdings", [])
+def _parse_holdings(raw: dict) -> Holdings:
+    items = raw.get("holdings", raw.get("positions", []))
     return Holdings(
         name=raw.get("name", "default"),
         as_of=raw.get("as_of"),
@@ -41,3 +40,14 @@ def load_holdings(path: str | Path = "configs/holdings.yaml") -> Holdings:
             for it in items
         ],
     )
+
+
+def load_holdings(path: str | Path = "configs/holdings.yaml") -> Holdings:
+    # 优先从 config.yml 读取
+    user_path = Path("config.yml")
+    if user_path.exists():
+        raw = yaml.safe_load(user_path.read_text(encoding="utf-8")) or {}
+        hr = raw.get("holdings")
+        if hr and (hr.get("holdings") or hr.get("positions")):
+            return _parse_holdings(hr)
+    return _parse_holdings(yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {})

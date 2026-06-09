@@ -144,7 +144,13 @@ def _make_items(
             continue
         cat = _classify(base_category=base_category, title=title, content=content)
         score, pos, neg = _score(title + " " + content)
-        rel = scorer.score(f"{title} {content}")
+        rel_text = _relevance_text(
+            base_category=base_category,
+            source=str(r.get("source") or ""),
+            title=title,
+            content=content,
+        )
+        rel = scorer.score(rel_text)
         nid = _hash_id(cat, r["source"], title, r["published_at"])
         out.append(NewsItem(
             id=nid,
@@ -163,6 +169,13 @@ def _make_items(
             fetched_at=fetched_at,
         ))
     return out
+
+
+def _relevance_text(*, base_category: str, source: str, title: str, content: str) -> str:
+    """Use tighter text for sources whose content can bundle many unrelated stories."""
+    if base_category == "policy" or source == "新闻联播":
+        return title
+    return f"{title} {content[:800]}"
 
 
 def _upsert(conn: sqlite3.Connection, items: list[NewsItem]) -> None:

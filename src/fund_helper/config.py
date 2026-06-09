@@ -28,6 +28,7 @@ class CacheCfg(BaseModel):
 class BenchmarksCfg(BaseModel):
     default: str = "000300.SH"
     by_type: dict[str, str] = Field(default_factory=dict)
+    by_fund: dict[str, str] = Field(default_factory=dict)
 
 
 class AiCfg(BaseModel):
@@ -45,6 +46,8 @@ class PromptsCfg(BaseModel):
     output_framework: str = ""
     market_analysis: str = ""
     sector_analysis: str = ""
+    holdings_analysis: str = ""
+    full_analysis: str = ""
 
 
 class PushCfg(BaseModel):
@@ -57,7 +60,35 @@ class PushCfg(BaseModel):
     smtp_password: str = ""
     smtp_use_tls: bool = True
     timeout: int = 15
-    max_chars: int = 3600
+    max_chars: int = 50000
+
+
+class FundProfileCfg(BaseModel):
+    category: str = ""
+    manager: str = ""
+    aum: str = ""
+    fee: str = ""
+    benchmark: str = ""
+    note: str = ""
+
+
+class WatchedCompanyCfg(BaseModel):
+    code: str = ""
+    name: str = ""
+    aliases: list[str] = Field(default_factory=list)
+    themes: list[str] = Field(default_factory=list)
+    role: str = ""
+    priority: int = 2
+
+
+class CompanyWatchCfg(BaseModel):
+    enabled: bool = True
+    include_fund_top_holdings: bool = True
+    max_auto_companies: int = 30
+    lookback_days: int = 14
+    max_news_scan: int = 2000
+    max_news_per_company: int = 5
+    companies: list[WatchedCompanyCfg] = Field(default_factory=list)
 
 
 class AppConfig(BaseModel):
@@ -70,13 +101,16 @@ class AppConfig(BaseModel):
     prompts: PromptsCfg = PromptsCfg()
     push: PushCfg = PushCfg()
     risk_free_rate: float = 0.018
+    buyer_profile: str = ""
+    holdings_raw: dict[str, Any] = Field(default_factory=dict)
+    fund_profiles: dict[str, FundProfileCfg] = Field(default_factory=dict)
+    company_watch: CompanyWatchCfg = CompanyWatchCfg()
 
 
 class EnvSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="FH_", env_file=".env", extra="ignore")
     data_dir: Path | None = None
     log_level: str | None = None
-    tushare_token: str | None = None
     ai_enabled: bool | None = None
     ai_protocol: str | None = None
     ai_base_url: str | None = None
@@ -98,11 +132,57 @@ class EnvSettings(BaseSettings):
 
 
 def load_config(path: str | Path = "configs/settings.yaml") -> AppConfig:
+    """加载配置，优先级：config.yml > configs/settings.yaml > 环境变量"""
+
     p = Path(path)
+    default_path = Path("configs/settings.yaml")
+    explicit_config = p != default_path
+
+    # 1. 显式 --config 优先；未显式指定时优先加载个人 config.yml
+    user_path = Path("config.yml")
     raw: dict[str, Any] = {}
-    if p.exists():
+    if explicit_config and p.exists():
         raw = yaml.safe_load(p.read_text()) or {}
+    elif user_path.exists():
+        raw = yaml.safe_load(user_path.read_text()) or {}
+
+    # 2. 回退到 configs/settings.yaml
+    if not raw:
+        if p.exists():
+            raw = yaml.safe_load(p.read_text()) or {}
+
+    # 将嵌套的 smtp 配置拍平到 push 字段
+    if "push" in raw and "smtp" in raw["push"]:
+        smtp = raw["push"].pop("smtp", {})
+        if isinstance(smtp, dict):
+            raw["push"]["smtp_host"] = smtp.get("host", "")
+            raw["push"]["smtp_port"] = smtp.get("port", 465)
+            raw["push"]["smtp_user"] = smtp.get("user", "")
+            raw["push"]["smtp_password"] = smtp.get("password", "")
+            raw["push"]["smtp_use_tls"] = smtp.get("use_tls", True)
+
+    # 3. 分离 holdings / buyer_profile（不传给 pydantic）
+    holdings_raw = raw.pop("holdings", {}) or {}
+    buyer_profile = raw.pop("buyer_profile", "") or ""
+
     cfg = AppConfig(**raw)
+    cfg.holdings_raw = holdings_raw
+    cfg.buyer_profile = buyer_profile
+
+    # 4. 环境变量覆盖
+    _apply_env_overrides(cfg)
+    cfg.data_dir.mkdir(parents=True, exist_ok=True)
+
+    # 5. 加载 prompts
+    prompts_path = Path("configs/prompts.yaml")
+    if prompts_path.exists():
+        praw = yaml.safe_load(prompts_path.read_text()) or {}
+        cfg.prompts = PromptsCfg(**praw)
+
+    return cfg
+
+
+def _apply_env_overrides(cfg: AppConfig) -> None:
     env = EnvSettings()
     if env.data_dir:
         cfg.data_dir = env.data_dir
@@ -143,9 +223,3 @@ def load_config(path: str | Path = "configs/settings.yaml") -> AppConfig:
         cfg.push.timeout = env.push_timeout
     if env.push_max_chars is not None:
         cfg.push.max_chars = env.push_max_chars
-    cfg.data_dir.mkdir(parents=True, exist_ok=True)
-    prompts_path = p.parent / "prompts.yaml"
-    if prompts_path.exists():
-        praw = yaml.safe_load(prompts_path.read_text()) or {}
-        cfg.prompts = PromptsCfg(**praw)
-    return cfg
